@@ -6,6 +6,6 @@ encryption techniques, providing insights into which algorithms may best suit sp
 
 The algorithms benchmarked include:
 
-AES 
-RSA 
-ECC 
+- AES 
+- RSA 
+- ECC 
