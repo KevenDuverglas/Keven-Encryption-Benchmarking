@@ -10,4 +10,4 @@ The algorithms benchmarked include:
 - RSA 
 - ECC 
 
-running program: python encryption_benchmark.py --file-path /home/duverglas01/CMPSC-403/Keven-Encryption-Benchmarking/test.jpg --algorithm RSA --rounds 3
+running program: `poetry run encryption_benchmark --file-path /home/duverglas01/CMPSC-403/Keven-Encryption-Benchmarking/test.jpg --algorithm AES --rounds 5`

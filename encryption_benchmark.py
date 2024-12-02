@@ -9,7 +9,7 @@ from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.asymmetric import rsa, padding
 from cryptography.hazmat.primitives.asymmetric.ec import SECP256R1, derive_private_key
 from cryptography.hazmat.primitives.kdf.hkdf import HKDF
-from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, NoEncryption, load_pem_private_key, PublicFormat
 from cryptography.hazmat.backends import default_backend
 from rich.console import Console
 from rich.table import Table
@@ -89,7 +89,11 @@ def encrypt_ecc(public_key, plaintext: bytes) -> bytes:
         format=PublicFormat.UncompressedPoint
     )  # Serialize the public key
     aes_key = HKDF(
-        algorithm=hashes.SHA256(), length=32, salt=None, info=b"ECC", backend=default_backend()
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=None,
+        info=b"ECC",
+        backend=default_backend()
     ).derive(shared_key)
     return encrypt_aes(aes_key, plaintext)
 
@@ -101,36 +105,49 @@ def decrypt_ecc(private_key, ciphertext: bytes) -> bytes:
         format=PublicFormat.UncompressedPoint
     )  # Serialize the public key from the private key
     aes_key = HKDF(
-        algorithm=hashes.SHA256(), length=32, salt=None, info=b"ECC", backend=default_backend()
+        algorithm=hashes.SHA256(),
+        length=32,
+        salt=None,
+        info=b"ECC",
+        backend=default_backend()
     ).derive(shared_key)
     return decrypt_aes(aes_key, ciphertext)
 
 
-def benchmark_encryption(
-    algorithm: Algorithm, file_path: str, rounds: int
-) -> List[Tuple[int, float, float, float]]:
+def benchmark_encryption(algorithm: Algorithm, file_path: str, rounds: int) -> List[Tuple[int, float, float, float]]:
     results = []
     with open(file_path, "rb") as f:
         plaintext = f.read()
 
-    for _ in range(rounds):
+    output_dir = f"encrypted_files_{algorithm.value.lower()}"
+    os.makedirs(output_dir, exist_ok=True)
+
+    for round_number in range(rounds):
         tracemalloc.start()
         start_time = time.time()
 
-        if algorithm == Algorithm.aes:
-            key = generate_aes_key()
-            ciphertext = encrypt_aes(key, plaintext)
-            decrypted = decrypt_aes(key, ciphertext)
-        elif algorithm == Algorithm.rsa:
-            private_key, public_key = generate_rsa_keys()
-
-            # Hybrid encryption: RSA for AES key, AES for data
-            encrypted_key, ciphertext = encrypt_rsa(public_key, plaintext)
-            decrypted = decrypt_rsa(private_key, encrypted_key, ciphertext)
-        elif algorithm == Algorithm.ecc:
+        if algorithm == Algorithm.ecc:
             private_key, public_key = generate_ecc_keys()
+
+            # Save the ECC private key to a file
+            private_key_path = os.path.join(output_dir, "ecc_private_key.pem")
+            with open(private_key_path, "wb") as key_file:
+                key_file.write(private_key.private_bytes(
+                    encoding=Encoding.PEM,
+                    format=PrivateFormat.PKCS8,
+                    encryption_algorithm=NoEncryption()
+                ))
+            console.print(f"ECC private key saved: {private_key_path}")
+
             ciphertext = encrypt_ecc(public_key, plaintext)
             decrypted = decrypt_ecc(private_key, ciphertext)
+
+            # Save the ciphertext
+            ciphertext_file_path = os.path.join(output_dir, f"round_{round_number + 1}.bin")
+            with open(ciphertext_file_path, "wb") as encrypted_file:
+                encrypted_file.write(ciphertext)
+            console.print(f"Encrypted file saved: {ciphertext_file_path}")
+
         else:
             raise ValueError("Unsupported algorithm")
 
@@ -142,6 +159,7 @@ def benchmark_encryption(
         results.append((len(plaintext), end_time - start_time, current / (1024**2), peak / (1024**2)))
 
     return results
+
 
 def print_results(algorithm: Algorithm, results: List[Tuple[int, float, float, float]]) -> None:
     table = Table(title=f"{algorithm.value} Benchmark Results")
@@ -157,17 +175,66 @@ def print_results(algorithm: Algorithm, results: List[Tuple[int, float, float, f
 
 
 @cli.command()
-def run(
+def encrypt(
     file_path: str = typer.Option(..., "--file-path", help="Path to the JPEG file to benchmark."),
     algorithm: Algorithm = typer.Option(..., "--algorithm", help="Encryption algorithm to benchmark."),
     rounds: int = typer.Option(5, "--rounds", help="Number of benchmarking rounds."),
 ):
     """
-    Run encryption benchmarking for the specified algorithm and file.
+    Encrypt all encrypted files in the specified folder.
     """
     console.print(f"Benchmarking {algorithm.value} with file: {file_path}")
     results = benchmark_encryption(algorithm, file_path, rounds)
     print_results(algorithm, results)
+
+
+@cli.command()
+def decrypt(
+    algorithm: Algorithm = typer.Option(..., "--algorithm", help="Encryption algorithm used."),
+    input_folder: str = typer.Option(..., "--input-folder", help="Folder containing encrypted files."),
+    output_folder: str = typer.Option("./decrypted_files", "--output-folder", help="Folder to save decrypted files."),
+):
+    """
+    Decrypt all encrypted files in the specified folder.
+    """
+    os.makedirs(output_folder, exist_ok=True)
+    console.print(f"Decrypting files in folder: {input_folder} using {algorithm.value}")
+
+    if algorithm == Algorithm.ecc:
+        # Load the ECC private key from the file
+        private_key_path = os.path.join(input_folder, "ecc_private_key.pem")
+        if not os.path.exists(private_key_path):
+            console.print(f"ECC private key file missing: {private_key_path}", style="red")
+            return
+
+        with open(private_key_path, "rb") as key_file:
+            private_key = load_pem_private_key(
+                key_file.read(),
+                password=None,
+                backend=default_backend()
+            )
+        console.print(f"ECC private key loaded from: {private_key_path}")
+
+    for file_name in os.listdir(input_folder):
+        if file_name.endswith(".bin"):
+            file_path = os.path.join(input_folder, file_name)
+
+            with open(file_path, "rb") as ciphertext_file:
+                ciphertext = ciphertext_file.read()
+
+            if algorithm == Algorithm.ecc:
+                decrypted = decrypt_ecc(private_key, ciphertext)
+            else:
+                raise ValueError("Unsupported algorithm")
+
+            output_file_path = os.path.join(output_folder, f"decrypted_{file_name}")
+            with open(output_file_path, "wb") as decrypted_file:
+                decrypted_file.write(decrypted)
+
+            console.print(f"Decrypted file saved: {output_file_path}")
+
+    console.print("Decryption process completed.")
+
 
 
 if __name__ == "__main__":
