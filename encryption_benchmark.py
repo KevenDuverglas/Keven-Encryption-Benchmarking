@@ -323,7 +323,7 @@ def decrypt(
 
             console.print(f"Decrypted file saved: {output_file_path}")
 
-    console.print("Decryption process completed.")
+    console.print("Decryption process completed.") 
 
 
 if __name__ == "__main__":
