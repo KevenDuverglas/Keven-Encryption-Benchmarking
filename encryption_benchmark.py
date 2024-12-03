@@ -13,16 +13,21 @@ from cryptography.hazmat.backends import default_backend
 from rich.console import Console
 from rich.table import Table
 import typer
+
 # CLI application
 cli = typer.Typer()
 console = Console()
+
 class Algorithm(str, Enum):
     """Supported encryption algorithms."""
     aes = "AES"
     rsa = "RSA"
     ecc = "ECC"
+
+
 def generate_aes_key() -> bytes:
     return os.urandom(32)
+
 def generate_rsa_keys():
     private_key = rsa.generate_private_key(
         public_exponent=65537, key_size=2048, backend=default_backend()
@@ -33,16 +38,21 @@ def generate_ecc_keys():
         private_value=1, curve=SECP256R1(), backend=default_backend()
     )
     return private_key, private_key.public_key()
+
 def encrypt_aes(key: bytes, plaintext: bytes) -> bytes:
     iv = os.urandom(16)
     cipher = Cipher(algorithms.AES(key), modes.CFB(iv), backend=default_backend())
     encryptor = cipher.encryptor()
     return iv + encryptor.update(plaintext) + encryptor.finalize()
+
+
 def decrypt_aes(key: bytes, ciphertext: bytes) -> bytes:
     iv, actual_ciphertext = ciphertext[:16], ciphertext[16:]
     cipher = Cipher(algorithms.AES(key), modes.CFB(iv), backend=default_backend())
     decryptor = cipher.decryptor()
     return decryptor.update(actual_ciphertext) + decryptor.finalize()
+
+
 def encrypt_rsa(public_key, plaintext: bytes) -> Tuple[bytes, bytes]:
     aes_key = generate_aes_key()
     ciphertext = encrypt_aes(aes_key, plaintext)
@@ -52,6 +62,8 @@ def encrypt_rsa(public_key, plaintext: bytes) -> Tuple[bytes, bytes]:
         padding.OAEP(mgf=padding.MGF1(algorithm=hashes.SHA256()), algorithm=hashes.SHA256(), label=None)
     )
     return encrypted_key, ciphertext
+
+
 def decrypt_rsa(private_key, encrypted_key: bytes, ciphertext: bytes) -> bytes:
     # Decrypt the AES key
     aes_key = private_key.decrypt(
@@ -73,6 +85,8 @@ def encrypt_ecc(public_key, plaintext: bytes) -> bytes:
         backend=default_backend()
     ).derive(shared_key)
     return encrypt_aes(aes_key, plaintext)
+
+
 def decrypt_ecc(private_key, ciphertext: bytes) -> bytes:
     """Decrypt data using ECC (simulated via shared key derived from the private key)."""
     shared_key = private_key.public_key().public_bytes(
