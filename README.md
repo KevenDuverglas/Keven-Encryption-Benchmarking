@@ -1,4 +1,4 @@
-# Keven Encryption Benchmarking Tool
+# Encryption Benchmarking Tool
 
 An **Encryption Benchmarking Tool** designed to evaluate and compare the performance of various encryption algorithms. This tool provides insights into encryption speed, memory usage, and resource efficiency, aiding in selecting the most suitable algorithm for specific applications and environments.
 
